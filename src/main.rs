@@ -2,6 +2,8 @@ use axum::{routing::get, Router, Json};
 use clap::Parser;
 use serde::Serialize;
 use std::net::SocketAddr;
+use tracing::info;
+use tracing_subscriber::{fmt, EnvFilter};
 
 const DEFAULT_PORT: u16 = 8094;
 const DEFAULT_HOST: &str = "127.0.0.1";
@@ -25,6 +27,10 @@ struct Args {
     /// Open browser on start
     #[arg(long, default_value_t = false)]
     open: bool,
+
+    /// Log level (trace, debug, info, warn, error)
+    #[arg(long, default_value = "info")]
+    log_level: String,
 }
 
 #[derive(Serialize)]
@@ -45,6 +51,16 @@ async fn main() {
     // Parse CLI arguments
     let args = Args::parse();
 
+    // Initialize logging
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(&args.log_level));
+
+    fmt()
+        .with_env_filter(filter)
+        .with_target(false)
+        .compact()
+        .init();
+
     // Build the router
     let app = Router::new()
         .route("/health", get(health_check));
@@ -54,12 +70,12 @@ async fn main() {
         .parse()
         .expect("Invalid address");
 
-    println!("🚀 Better Manager v{}", env!("CARGO_PKG_VERSION"));
-    println!("   Server: http://{}", addr);
-    println!("   Health: http://{}/health", addr);
+    info!("🚀 Better Manager v{}", env!("CARGO_PKG_VERSION"));
+    info!("   Server: http://{}", addr);
+    info!("   Health: http://{}/health", addr);
 
     if args.open {
-        println!("   Opening browser...");
+        info!("   Opening browser...");
         let url = format!("http://{}", addr);
         let _ = open::that(&url);
     }
