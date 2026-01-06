@@ -2,6 +2,7 @@
 
 mod accounts;
 mod config;
+mod monitor;
 mod routes;
 mod state;
 
