@@ -1,6 +1,8 @@
-# Rust
-/target/
-Cargo.lock
+# Dependencies
+node_modules/
+
+# Build output
+dist/
 
 # IDE
 .idea/
@@ -27,13 +29,7 @@ Thumbs.db
 *.log
 logs/
 
-# Frontend
-frontend/node_modules/
-frontend/dist/
-frontend/.vite/
-
 # Build artifacts
-dist/
 *.tar.gz
 *.zip
 *.deb
@@ -43,3 +39,6 @@ dist/
 # Test coverage
 coverage/
 *.lcov
+
+# TypeScript
+*.tsbuildinfo
