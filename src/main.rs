@@ -5,6 +5,8 @@ use std::net::SocketAddr;
 use tracing::info;
 use tracing_subscriber::{fmt, EnvFilter};
 
+use better_manager::api::api_router;
+
 const DEFAULT_PORT: u16 = 8094;
 const DEFAULT_HOST: &str = "127.0.0.1";
 
@@ -63,7 +65,8 @@ async fn main() {
 
     // Build the router
     let app = Router::new()
-        .route("/health", get(health_check));
+        .route("/health", get(health_check))
+        .nest("/api", api_router());
 
     // Bind to address
     let addr: SocketAddr = format!("{}:{}", args.host, args.port)
