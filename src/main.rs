@@ -5,7 +5,8 @@ use std::net::SocketAddr;
 use tracing::info;
 use tracing_subscriber::{fmt, EnvFilter};
 
-use better_manager::api::api_router;
+use better_manager::api::{api_router, AppState};
+use better_manager::db::{Database, run_migrations};
 
 const DEFAULT_PORT: u16 = 8094;
 const DEFAULT_HOST: &str = "127.0.0.1";
@@ -63,10 +64,18 @@ async fn main() {
         .compact()
         .init();
 
+    // Initialize database
+    let db = Database::open(None).expect("Failed to open database");
+    db.with_conn(|conn| run_migrations(conn))
+        .expect("Failed to run migrations");
+
+    let state = AppState::new(db);
+
     // Build the router
     let app = Router::new()
         .route("/health", get(health_check))
-        .nest("/api", api_router());
+        .nest("/api", api_router())
+        .with_state(state);
 
     // Bind to address
     let addr: SocketAddr = format!("{}:{}", args.host, args.port)
