@@ -1,0 +1,19 @@
+[package]
+name = "better-manager"
+version = "0.1.0"
+edition = "2021"
+authors = ["nagara"]
+description = "A lightweight AI account manager and protocol proxy"
+license = "MIT"
+repository = "https://github.com/nagara/better-manager"
+keywords = ["ai", "proxy", "gemini", "claude", "openai"]
+categories = ["web-programming", "network-programming"]
+
+[dependencies]
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+opt-level = "z"
+panic = "abort"
