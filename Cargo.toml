@@ -30,6 +30,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # CLI
 clap = { version = "4", features = ["derive"] }
 
+# Database
+rusqlite = { version = "0.33", features = ["bundled"] }
+
+# Platform directories
+directories = "6"
+
 # Utilities
 open = "5"
 
