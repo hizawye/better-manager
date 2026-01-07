@@ -36,7 +36,7 @@ export class GoogleOAuth {
   constructor(config: Partial<GoogleOAuthConfig> = {}) {
     this.clientId = config.clientId || process.env.GOOGLE_CLIENT_ID || '';
     this.clientSecret = config.clientSecret || process.env.GOOGLE_CLIENT_SECRET || '';
-    this.redirectUri = config.redirectUri || 'http://localhost:8095/oauth/callback';
+    this.redirectUri = config.redirectUri || 'http://localhost:8094/oauth/callback';
   }
 
   /**
