@@ -2,6 +2,41 @@
 
 > Building a lighter, faster, more stable AI account manager and protocol proxy
 
+---
+
+## 📊 **PROGRESS SUMMARY** (Updated: 2026-01-07)
+
+### Project Status
+**Tech Stack**: TypeScript/Node.js (migrated from Rust)
+**Last Commit**: `0bdd580 feat: switch to Cloud Code API for Gemini Pro support`
+**Default Port**: 8094
+
+### Phase Completion
+- ✅ **PHASE 1**: Project Foundation (TypeScript/Node.js)
+- ✅ **PHASE 2**: Database Layer (SQLite + Drizzle ORM)
+- ✅ **PHASE 3**: REST API (Accounts, Config, Monitor)
+- ✅ **PHASE 4**: OAuth Authentication (Google OAuth)
+- 🔄 **PHASE 5**: Protocol Proxy (**Streaming in progress**)
+- ⏸️ **PHASE 6**: Frontend (Not started)
+- ⏸️ **PHASE 7**: Integration (Pending)
+- ⏸️ **PHASE 8**: Distribution (Pending)
+
+### Current Priority
+**Adding SSE Streaming Support** to proxy handlers
+
+See detailed streaming plan: `/home/nagara/.claude/plans/sharded-inventing-badger.md`
+
+**Files needing work**:
+- `src/proxy/handlers/openai.ts` (25 lines) - Complete `/v1/chat/completions` with streaming
+- `src/proxy/handlers/claude.ts` (159 lines) - Add streaming to `/v1/messages`
+- `src/proxy/mappers/claude.ts` (346 lines) - Add `transformClaudeStreamChunk()`
+
+**Ready to use**:
+- ✅ `transformOpenAIStreamChunk()` in `src/proxy/mappers/openai.ts:304`
+- ✅ Token manager, middleware stack, upstream client
+
+---
+
 ## Project Summary
 
 **Goal**: Recreate Antigravity Manager as a **web-based dashboard** with:
