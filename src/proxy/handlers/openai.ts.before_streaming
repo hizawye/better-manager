@@ -72,7 +72,7 @@ router.post('/chat/completions', async (req: Request, res: Response) => {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         const { accessToken, projectId, email } = await tokenManager.getToken('chat', attempt > 0, sessionId);
-        console.log('Using account:', email, 'for OpenAI model:', openaiReq.model, 'stream:', stream);
+        console.log('Using account:', email, 'for OpenAI model:', openaiReq.model);
 
         const geminiBody = transformOpenAIRequest(openaiReq, mappedModel);
 
