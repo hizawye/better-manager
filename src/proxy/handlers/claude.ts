@@ -3,8 +3,9 @@
 import { Router, Request, Response } from 'express';
 import { tokenManager } from '../token-manager.js';
 import { upstreamClient, unwrapStreamChunk } from '../upstream.js';
-import { transformClaudeRequest, transformClaudeResponse } from '../mappers/claude.js';
+import { transformClaudeRequest, transformClaudeResponse, transformClaudeStreamChunk } from '../mappers/claude.js';
 import { ClaudeRequest } from '../types.js';
+import crypto from 'crypto';
 
 const router = Router();
 
@@ -74,49 +75,124 @@ router.post('/messages', async (req: Request, res: Response) => {
     const sessionId = extractSessionId(claudeReq);
     const poolSize = tokenManager.size();
     const maxAttempts = Math.min(MAX_RETRY_ATTEMPTS, Math.max(1, poolSize));
+    const stream = claudeReq.stream ?? false;
     let lastError = '';
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         const { accessToken, projectId, email } = await tokenManager.getToken('chat', attempt > 0, sessionId);
-        console.log('Using account:', email, 'for Claude model:', claudeReq.model);
+        console.log('Using account:', email, 'for Claude model:', claudeReq.model, 'stream:', stream);
 
         const geminiBody = transformClaudeRequest(claudeReq, mappedModel);
 
-        // For now, only support non-streaming
-        const response = await upstreamClient.callGenerateContent(
-          mappedModel,
-          'generateContent',
-          accessToken,
-          projectId,
-          geminiBody
-        );
+        if (stream) {
+          res.setHeader('Content-Type', 'text/event-stream');
+          res.setHeader('Cache-Control', 'no-cache');
+          res.setHeader('Connection', 'keep-alive');
 
-        if (response.ok) {
-          const wrappedResp = await response.json();
-          const geminiResp = unwrapStreamChunk(wrappedResp);
-          const claudeResp = transformClaudeResponse(geminiResp, claudeReq.model);
-          return res.json(claudeResp);
-        }
+          const response = await upstreamClient.callGenerateContent(
+            mappedModel,
+            'streamGenerateContent',
+            accessToken,
+            projectId,
+            geminiBody,
+            'alt=sse'
+          );
 
-        // Handle errors
-        const status = response.status;
-        const errorText = await response.text();
-        lastError = 'HTTP ' + status + ': ' + errorText;
+          if (!response.ok) {
+            const status = response.status;
+            const errorText = await response.text();
 
-        // Rate limit handling
-        if (status === 429 || status === 503 || status === 529) {
-          const retryAfter = response.headers.get('Retry-After');
-          tokenManager.markRateLimited(email, status, retryAfter ?? undefined, errorText);
-          continue;
-        }
+            if (status === 429 || status === 503 || status === 529) {
+              const retryAfter = response.headers.get('Retry-After');
+              tokenManager.markRateLimited(email, status, retryAfter ?? undefined, errorText);
+              continue;
+            }
 
-        // Non-retryable error
-        if (status >= 400 && status < 500) {
-          return res.status(status).json({
-            type: 'error',
-            error: { type: 'api_error', message: errorText }
-          });
+            res.write('event: error\ndata: ' + JSON.stringify({ type: 'error', error: { type: 'api_error', message: errorText } }) + '\n\n');
+            res.end();
+            return;
+          }
+
+          const reader = response.body?.getReader();
+          if (!reader) {
+            res.write('event: error\ndata: ' + JSON.stringify({ type: 'error', error: { type: 'api_error', message: 'No response body' } }) + '\n\n');
+            res.end();
+            return;
+          }
+
+          const decoder = new TextDecoder();
+          let buffer = '';
+          const messageId = 'msg_' + crypto.randomBytes(12).toString('hex');
+          const blockIndex = { current: 0 };
+
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
+
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith(':')) continue;
+
+                if (trimmed.startsWith('data:')) {
+                  const data = trimmed.substring(5).trim();
+                  try {
+                    const geminiChunk = JSON.parse(data);
+                    const unwrapped = unwrapStreamChunk(geminiChunk);
+                    for (const sseEvent of transformClaudeStreamChunk(unwrapped, claudeReq.model, messageId, blockIndex)) {
+                      res.write(sseEvent);
+                    }
+                  } catch (e) {
+                    // Skip malformed chunks
+                  }
+                }
+              }
+            }
+
+            res.end();
+            return;
+          } catch (err) {
+            console.error('Stream processing error:', err);
+            res.end();
+            return;
+          }
+        } else {
+          const response = await upstreamClient.callGenerateContent(
+            mappedModel,
+            'generateContent',
+            accessToken,
+            projectId,
+            geminiBody
+          );
+
+          if (!response.ok) {
+            const status = response.status;
+            const errorText = await response.text();
+            lastError = 'HTTP ' + status + ': ' + errorText;
+
+            if (status === 429 || status === 503 || status === 529) {
+              const retryAfter = response.headers.get('Retry-After');
+              tokenManager.markRateLimited(email, status, retryAfter ?? undefined, errorText);
+              continue;
+            }
+
+            if (status >= 400 && status < 500) {
+              return res.status(status).json({
+                type: 'error',
+                error: { type: 'api_error', message: errorText }
+              });
+            }
+          } else {
+            const wrappedResp = await response.json();
+            const geminiResp = unwrapStreamChunk(wrappedResp);
+            const claudeResp = transformClaudeResponse(geminiResp, claudeReq.model);
+            return res.json(claudeResp);
+          }
         }
 
       } catch (err) {
