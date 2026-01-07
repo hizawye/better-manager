@@ -96,7 +96,6 @@ function convertRole(role: 'user' | 'assistant'): 'user' | 'model' {
  */
 export function transformClaudeRequest(
   req: ClaudeRequest,
-  projectId: string,
   mappedModel: string
 ): GeminiRequest {
   // Convert messages

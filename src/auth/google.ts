@@ -1,11 +1,16 @@
 import crypto from 'crypto';
 
-// Required OAuth scopes for Gemini API access
+// Cloud Code OAuth credentials (same as Antigravity-Manager)
+const CLOUD_CODE_CLIENT_ID = '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com';
+const CLOUD_CODE_CLIENT_SECRET = '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';
+
+// Required OAuth scopes for Cloud Code API access
 export const SCOPES = [
-  'https://www.googleapis.com/auth/generative-language.retriever',
   'https://www.googleapis.com/auth/cloud-platform',
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/userinfo.profile',
+  'https://www.googleapis.com/auth/cclog',
+  'https://www.googleapis.com/auth/experimentsandconfigs',
 ];
 
 export interface TokenResponse {
@@ -34,8 +39,9 @@ export class GoogleOAuth {
   private redirectUri: string;
 
   constructor(config: Partial<GoogleOAuthConfig> = {}) {
-    this.clientId = config.clientId || process.env.GOOGLE_CLIENT_ID || '';
-    this.clientSecret = config.clientSecret || process.env.GOOGLE_CLIENT_SECRET || '';
+    // Always use Cloud Code credentials for cloudcode-pa.googleapis.com compatibility
+    this.clientId = config.clientId || CLOUD_CODE_CLIENT_ID;
+    this.clientSecret = config.clientSecret || CLOUD_CODE_CLIENT_SECRET;
     this.redirectUri = config.redirectUri || 'http://localhost:8094/oauth/callback';
   }
 

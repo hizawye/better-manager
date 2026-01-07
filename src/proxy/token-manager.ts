@@ -4,6 +4,7 @@ import { db } from '../db/index.js';
 import { accounts } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { googleOAuth } from '../auth/google.js';
+import { upstreamClient } from './upstream.js';
 import {
   ProxyToken,
   RateLimitInfo,
@@ -198,12 +199,24 @@ export class TokenManager {
         }
       }
 
-      // TODO: Fetch project_id if needed (for now, use placeholder)
-      const projectId = targetToken.projectId ?? 'default-project';
+      // Fetch project_id if not cached
+      if (!targetToken.projectId) {
+        console.log(`Fetching project_id for ${targetToken.email}...`);
+        try {
+          const projectId = await upstreamClient.fetchProjectId(targetToken.accessToken);
+          targetToken.projectId = projectId;
+          this.tokens.set(targetToken.accountId, targetToken);
+          console.log(`Got project_id for ${targetToken.email}: ${projectId}`);
+        } catch (err) {
+          console.warn(`Failed to fetch project_id for ${targetToken.email}:`, err);
+          // Use fallback project_id
+          targetToken.projectId = `fallback-${Date.now()}`;
+        }
+      }
 
       return {
         accessToken: targetToken.accessToken,
-        projectId,
+        projectId: targetToken.projectId!,
         email: targetToken.email,
       };
     }

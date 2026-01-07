@@ -2,21 +2,23 @@
 
 import { Router, Request, Response } from 'express';
 import { tokenManager } from '../token-manager.js';
-import { upstreamClient } from '../upstream.js';
+import { upstreamClient, unwrapStreamChunk } from '../upstream.js';
 import { transformOpenAIRequest, transformOpenAIResponse } from '../mappers/openai.js';
 import { OpenAIRequest } from '../types.js';
 
 const router = Router();
 
 const MODEL_MAPPING: Record<string, string> = {
-  'gpt-4': 'gemini-2.0-flash',
-  'gpt-4-turbo': 'gemini-2.0-flash',
-  'gpt-4o': 'gemini-2.0-flash',
-  'gpt-4o-mini': 'gemini-2.0-flash',
-  'gpt-3.5-turbo': 'gemini-2.0-flash',
-  'gemini-2.0-flash': 'gemini-2.0-flash',
+  'gpt-4': 'gemini-2.5-flash',
+  'gpt-4-turbo': 'gemini-2.5-flash',
+  'gpt-4o': 'gemini-2.5-flash',
+  'gpt-4o-mini': 'gemini-2.5-flash',
+  'gpt-3.5-turbo': 'gemini-2.5-flash',
+  'gemini-2.5-flash': 'gemini-2.5-flash',
+  'gemini-2.5-pro': 'gemini-2.5-pro',
+  'gemini-2.0-flash': 'gemini-2.5-flash',
   'gemini-1.5-pro': 'gemini-1.5-pro',
-  'gemini-1.5-flash': 'gemini-1.5-flash',
+  'gemini-1.5-flash': 'gemini-2.5-flash',
 };
 
 const MAX_RETRY_ATTEMPTS = 3;
@@ -68,18 +70,20 @@ router.post('/chat/completions', async (req: Request, res: Response) => {
         const { accessToken, projectId, email } = await tokenManager.getToken('chat', attempt > 0, sessionId);
         console.log('Using account:', email, 'for model:', mappedModel);
 
-        const geminiBody = transformOpenAIRequest(openaiReq, projectId, mappedModel);
+        const geminiBody = transformOpenAIRequest(openaiReq, mappedModel);
 
         // For now, only support non-streaming
         const response = await upstreamClient.callGenerateContent(
           mappedModel,
           'generateContent',
           accessToken,
+          projectId,
           geminiBody
         );
 
         if (response.ok) {
-          const geminiResp = await response.json();
+          const wrappedResp = await response.json();
+          const geminiResp = unwrapStreamChunk(wrappedResp);
           const openaiResp = transformOpenAIResponse(geminiResp, openaiReq.model);
           return res.json(openaiResp);
         }

@@ -86,7 +86,6 @@ function extractSystemMessage(messages: OpenAIMessage[]): string | undefined {
  */
 export function transformOpenAIRequest(
   req: OpenAIRequest,
-  projectId: string,
   mappedModel: string
 ): GeminiRequest {
   // Extract system message

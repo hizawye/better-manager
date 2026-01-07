@@ -2,7 +2,7 @@
 
 import { Router, Request, Response } from 'express';
 import { tokenManager } from '../token-manager.js';
-import { upstreamClient } from '../upstream.js';
+import { upstreamClient, unwrapStreamChunk } from '../upstream.js';
 import { transformClaudeRequest, transformClaudeResponse } from '../mappers/claude.js';
 import { ClaudeRequest } from '../types.js';
 
@@ -10,16 +10,17 @@ const router = Router();
 
 // Model mapping (Claude model names to Gemini)
 const MODEL_MAPPING: Record<string, string> = {
-  'claude-3-opus-20240229': 'gemini-2.0-flash',
-  'claude-3-sonnet-20240229': 'gemini-2.0-flash',
-  'claude-3-haiku-20240307': 'gemini-2.0-flash',
-  'claude-3-5-sonnet-20240620': 'gemini-2.0-flash',
-  'claude-3-5-sonnet-20241022': 'gemini-2.0-flash',
-  'claude-3-5-haiku-20241022': 'gemini-2.0-flash',
-  'claude-sonnet-4-20250514': 'gemini-2.0-flash',
-  'claude-opus-4-20250514': 'gemini-2.0-flash',
+  'claude-3-opus-20240229': 'gemini-2.5-flash',
+  'claude-3-sonnet-20240229': 'gemini-2.5-flash',
+  'claude-3-haiku-20240307': 'gemini-2.5-flash',
+  'claude-3-5-sonnet-20240620': 'gemini-2.5-flash',
+  'claude-3-5-sonnet-20241022': 'gemini-2.5-flash',
+  'claude-3-5-haiku-20241022': 'gemini-2.5-flash',
+  'claude-sonnet-4-20250514': 'gemini-2.5-flash',
+  'claude-opus-4-20250514': 'gemini-2.5-flash',
   // Direct Gemini passthrough
-  'gemini-2.0-flash': 'gemini-2.0-flash',
+  'gemini-2.5-flash': 'gemini-2.5-flash',
+  'gemini-2.5-pro': 'gemini-2.5-pro',
   'gemini-1.5-pro': 'gemini-1.5-pro',
 };
 
@@ -80,18 +81,20 @@ router.post('/messages', async (req: Request, res: Response) => {
         const { accessToken, projectId, email } = await tokenManager.getToken('chat', attempt > 0, sessionId);
         console.log('Using account:', email, 'for Claude model:', claudeReq.model);
 
-        const geminiBody = transformClaudeRequest(claudeReq, projectId, mappedModel);
+        const geminiBody = transformClaudeRequest(claudeReq, mappedModel);
 
         // For now, only support non-streaming
         const response = await upstreamClient.callGenerateContent(
           mappedModel,
           'generateContent',
           accessToken,
+          projectId,
           geminiBody
         );
 
         if (response.ok) {
-          const geminiResp = await response.json();
+          const wrappedResp = await response.json();
+          const geminiResp = unwrapStreamChunk(wrappedResp);
           const claudeResp = transformClaudeResponse(geminiResp, claudeReq.model);
           return res.json(claudeResp);
         }
