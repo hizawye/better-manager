@@ -25,9 +25,9 @@ function cleanupStates() {
 router.get('/start', async (req, res) => {
   try {
     if (!googleOAuth.isConfigured()) {
-      return res.status(400).json({
+      return res.status(500).json({
         error: 'OAuth not configured',
-        message: 'Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables',
+        message: 'OAuth client credentials are missing',
       });
     }
 
@@ -165,8 +165,9 @@ router.get('/callback', async (req, res) => {
 router.get('/status', (req, res) => {
   res.json({
     configured: googleOAuth.isConfigured(),
-    hasClientId: Boolean(process.env.GOOGLE_CLIENT_ID),
-    hasClientSecret: Boolean(process.env.GOOGLE_CLIENT_SECRET),
+    // Using hardcoded Cloud Code credentials - always configured
+    hasClientId: true,
+    hasClientSecret: true,
   });
 });
 

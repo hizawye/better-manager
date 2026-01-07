@@ -82,6 +82,50 @@ function extractSystemMessage(messages: OpenAIMessage[]): string | undefined {
 }
 
 /**
+ * Strip unsupported fields from tool schema for Gemini compatibility
+ * Gemini only supports a subset of JSON Schema: type, properties, required, enum, items, description
+ */
+function cleanToolSchema(schema: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!schema) return undefined;
+
+  // Fields that Gemini supports
+  const SUPPORTED_FIELDS = new Set([
+    'type',
+    'properties',
+    'required',
+    'enum',
+    'items',
+    'description',
+    'format',
+    'minimum',
+    'maximum',
+    'minItems',
+    'maxItems',
+    'nullable',
+  ]);
+
+  const cleaned: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(schema)) {
+    // Skip unsupported fields
+    if (!SUPPORTED_FIELDS.has(key)) continue;
+
+    // Recursively clean nested objects
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      cleaned[key] = cleanToolSchema(value as Record<string, unknown>);
+    } else if (Array.isArray(value)) {
+      cleaned[key] = value.map(item =>
+        item && typeof item === 'object' ? cleanToolSchema(item as Record<string, unknown>) : item
+      );
+    } else {
+      cleaned[key] = value;
+    }
+  }
+
+  return cleaned;
+}
+
+/**
  * Transform OpenAI request to Gemini request
  */
 export function transformOpenAIRequest(
@@ -183,7 +227,7 @@ export function transformOpenAIRequest(
       functionDeclarations: req.tools.map(tool => ({
         name: tool.function.name,
         description: tool.function.description,
-        parameters: tool.function.parameters,
+        parameters: cleanToolSchema(tool.function.parameters),
       })),
     }];
 

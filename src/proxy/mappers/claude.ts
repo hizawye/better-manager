@@ -11,12 +11,120 @@ import {
   GeminiPart,
 } from '../types.js';
 
+// Minimum signature length for a valid thinking block
+const MIN_SIGNATURE_LENGTH = 10;
+
 /**
  * Generate a unique ID for responses
  */
 function generateId(): string {
   return 'msg_' + Math.random().toString(36).substring(2, 15) +
          Math.random().toString(36).substring(2, 15);
+}
+
+/**
+ * Check if a thinking block has a valid signature
+ * Vertex AI / Gemini requires valid signatures for thinking blocks
+ */
+function hasValidSignature(block: ClaudeContentBlock): boolean {
+  if (block.type !== 'thinking') return true;
+
+  // Empty thinking + any signature = valid (trailing signature case)
+  if (!block.thinking && block.signature) return true;
+
+  // Has content + sufficient signature length = valid
+  return Boolean(block.signature && block.signature.length >= MIN_SIGNATURE_LENGTH);
+}
+
+/**
+ * Sanitize a thinking block by removing cache_control
+ */
+function sanitizeThinkingBlock(block: ClaudeContentBlock): ClaudeContentBlock {
+  if (block.type !== 'thinking') return block;
+
+  return {
+    type: 'thinking',
+    thinking: block.thinking,
+    signature: block.signature,
+  };
+}
+
+/**
+ * Filter invalid thinking blocks from messages
+ * This prevents "Invalid signature" errors from Gemini
+ */
+export function filterInvalidThinkingBlocks(messages: ClaudeMessage[]): number {
+  let totalFiltered = 0;
+
+  for (const msg of messages) {
+    // Only process assistant messages
+    if (msg.role !== 'assistant') continue;
+
+    if (!Array.isArray(msg.content)) continue;
+
+    const originalLen = msg.content.length;
+    const newBlocks: ClaudeContentBlock[] = [];
+
+    for (const block of msg.content) {
+      if (block.type === 'thinking') {
+        if (hasValidSignature(block)) {
+          newBlocks.push(sanitizeThinkingBlock(block));
+        } else {
+          // Convert thinking with invalid signature to text, preserving content
+          if (block.thinking && block.thinking.length > 0) {
+            console.log(`[Claude] Converting invalid thinking block to text (${block.thinking.length} chars)`);
+            newBlocks.push({ type: 'text', text: block.thinking });
+          }
+        }
+      } else if (block.type === 'redacted_thinking') {
+        // Skip redacted thinking blocks entirely - Gemini doesn't support them
+        console.log('[Claude] Removing redacted_thinking block');
+      } else {
+        newBlocks.push(block);
+      }
+    }
+
+    // Ensure message has at least one content block
+    if (newBlocks.length === 0) {
+      newBlocks.push({ type: 'text', text: '' });
+    }
+
+    msg.content = newBlocks;
+    totalFiltered += originalLen - newBlocks.length;
+  }
+
+  if (totalFiltered > 0) {
+    console.log(`[Claude] Filtered ${totalFiltered} invalid thinking block(s) from history`);
+  }
+
+  return totalFiltered;
+}
+
+/**
+ * Remove trailing unsigned thinking blocks from content
+ */
+function removeTrailingUnsignedThinking(blocks: ClaudeContentBlock[]): void {
+  if (blocks.length === 0) return;
+
+  // Scan backwards and remove unsigned thinking blocks at the end
+  let endIndex = blocks.length;
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    if (blocks[i].type === 'thinking') {
+      if (!hasValidSignature(blocks[i])) {
+        endIndex = i;
+      } else {
+        break; // Stop at valid thinking block
+      }
+    } else {
+      break; // Stop at non-thinking block
+    }
+  }
+
+  if (endIndex < blocks.length) {
+    const removed = blocks.length - endIndex;
+    blocks.splice(endIndex);
+    console.log(`[Claude] Removed ${removed} trailing unsigned thinking block(s)`);
+  }
 }
 
 /**
@@ -66,6 +174,18 @@ function convertContentBlock(block: ClaudeContentBlock): GeminiPart | null {
       }
       return null;
 
+    case 'thinking':
+      // Convert valid thinking blocks to text for Gemini
+      // The thinking content is useful context even if Gemini doesn't have native thinking
+      if (block.thinking) {
+        return { text: `<thinking>${block.thinking}</thinking>` };
+      }
+      return null;
+
+    case 'redacted_thinking':
+      // Skip redacted thinking entirely
+      return null;
+
     default:
       return null;
   }
@@ -89,6 +209,48 @@ function convertMessageContent(content: string | ClaudeContentBlock[]): GeminiPa
  */
 function convertRole(role: 'user' | 'assistant'): 'user' | 'model' {
   return role === 'assistant' ? 'model' : 'user';
+}
+
+/**
+ * Strip unsupported fields from tool schema for Gemini compatibility
+ * Gemini only supports a subset of JSON Schema: type, properties, required, enum, items, description
+ */
+function cleanToolSchema(schema: Record<string, unknown>): Record<string, unknown> {
+  // Fields that Gemini supports
+  const SUPPORTED_FIELDS = new Set([
+    'type',
+    'properties',
+    'required',
+    'enum',
+    'items',
+    'description',
+    'format',
+    'minimum',
+    'maximum',
+    'minItems',
+    'maxItems',
+    'nullable',
+  ]);
+
+  const cleaned: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(schema)) {
+    // Skip unsupported fields
+    if (!SUPPORTED_FIELDS.has(key)) continue;
+
+    // Recursively clean nested objects
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      cleaned[key] = cleanToolSchema(value as Record<string, unknown>);
+    } else if (Array.isArray(value)) {
+      cleaned[key] = value.map(item =>
+        item && typeof item === 'object' ? cleanToolSchema(item as Record<string, unknown>) : item
+      );
+    } else {
+      cleaned[key] = value;
+    }
+  }
+
+  return cleaned;
 }
 
 /**
@@ -123,9 +285,24 @@ export function transformClaudeRequest(
 
   // Add system instruction
   if (req.system) {
-    geminiReq.systemInstruction = {
-      parts: [{ text: req.system }],
-    };
+    let systemText: string;
+    if (typeof req.system === 'string') {
+      systemText = req.system;
+    } else if (Array.isArray(req.system)) {
+      // Handle array of content blocks (Claude Code format)
+      systemText = req.system
+        .filter(block => block.type === 'text')
+        .map(block => block.text || '')
+        .join('\n');
+    } else {
+      systemText = '';
+    }
+
+    if (systemText) {
+      geminiReq.systemInstruction = {
+        parts: [{ text: systemText }],
+      };
+    }
   }
 
   // Add generation config
@@ -152,7 +329,7 @@ export function transformClaudeRequest(
       functionDeclarations: req.tools.map(tool => ({
         name: tool.name,
         description: tool.description,
-        parameters: tool.input_schema,
+        parameters: cleanToolSchema(tool.input_schema),
       })),
     }];
 

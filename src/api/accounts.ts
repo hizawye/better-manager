@@ -2,8 +2,43 @@ import { Router } from 'express';
 import { db } from '../db/index.js';
 import { accounts, currentAccount } from '../db/schema.js';
 import { eq, asc } from 'drizzle-orm';
+import { tokenManager } from '../proxy/token-manager.js';
+import { upstreamClient, CloudCodeQuota } from '../proxy/upstream.js';
+import { googleOAuth } from '../auth/google.js';
 
 const router = Router();
+
+// Cache for quota info (accountId -> quota)
+const quotaCache = new Map<number, { quota: CloudCodeQuota; fetchedAt: number }>();
+const QUOTA_CACHE_TTL = 60000; // 1 minute cache
+
+/**
+ * Fetch quota for an account, with caching
+ */
+async function getAccountQuota(accountId: number, accessToken: string, refreshToken: string): Promise<CloudCodeQuota | null> {
+  // Check cache first
+  const cached = quotaCache.get(accountId);
+  if (cached && Date.now() - cached.fetchedAt < QUOTA_CACHE_TTL) {
+    return cached.quota;
+  }
+
+  try {
+    // Refresh token if needed
+    let token = accessToken;
+    const now = Date.now();
+
+    // Try to fetch quota
+    const quota = await upstreamClient.fetchQuota(token);
+
+    // Cache the result
+    quotaCache.set(accountId, { quota, fetchedAt: now });
+
+    return quota;
+  } catch (error) {
+    console.error(`Failed to fetch quota for account ${accountId}:`, error);
+    return null;
+  }
+}
 
 // Get all accounts
 router.get('/', async (req, res) => {
@@ -17,11 +52,35 @@ router.get('/', async (req, res) => {
         isActive: accounts.isActive,
         sortOrder: accounts.sortOrder,
         expiresAt: accounts.expiresAt,
+        accessToken: accounts.accessToken,
+        refreshToken: accounts.refreshToken,
       })
       .from(accounts)
       .orderBy(asc(accounts.sortOrder));
 
-    res.json(result);
+    // Fetch quota for each account in parallel
+    const accountsWithQuota = await Promise.all(
+      result.map(async (account) => {
+        const quota = await getAccountQuota(account.id, account.accessToken, account.refreshToken);
+
+        return {
+          id: account.id,
+          email: account.email,
+          displayName: account.displayName,
+          photoUrl: account.photoUrl,
+          is_forbidden: false, // Would be set based on rate limit status
+          disabled_for_proxy: !account.isActive,
+          subscription_tier: quota?.subscriptionTier ?? 'FREE',
+          quota_info: quota ? {
+            pro_quota: quota.proQuota,
+            flash_quota: quota.flashQuota,
+            image_quota: quota.imageQuota,
+          } : undefined,
+        };
+      })
+    );
+
+    res.json(accountsWithQuota);
   } catch (error) {
     console.error('Failed to get accounts:', error);
     res.status(500).json({ error: 'Failed to get accounts' });
@@ -147,6 +206,58 @@ router.post('/:id/current', async (req, res) => {
   } catch (error) {
     console.error('Failed to set current account:', error);
     res.status(500).json({ error: 'Failed to set current account' });
+  }
+});
+
+// Refresh all accounts (reload tokens)
+router.post('/refresh', async (_req, res) => {
+  try {
+    const count = await tokenManager.loadAccounts();
+    res.json({ success: true, accountsLoaded: count });
+  } catch (error) {
+    console.error('Failed to refresh accounts:', error);
+    res.status(500).json({ error: 'Failed to refresh accounts' });
+  }
+});
+
+// Refresh quota for a specific account
+router.post('/:id/refresh-quota', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+
+    // Get account details
+    const account = await db
+      .select({
+        email: accounts.email,
+        accessToken: accounts.accessToken,
+        refreshToken: accounts.refreshToken,
+      })
+      .from(accounts)
+      .where(eq(accounts.id, id))
+      .limit(1);
+
+    if (account.length === 0) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
+
+    // Clear cache for this account to force refresh
+    quotaCache.delete(id);
+
+    // Fetch fresh quota
+    const quota = await getAccountQuota(id, account[0].accessToken, account[0].refreshToken);
+
+    res.json({
+      success: true,
+      message: 'Quota refreshed',
+      quota_info: quota ? {
+        pro_quota: quota.proQuota,
+        flash_quota: quota.flashQuota,
+        image_quota: quota.imageQuota,
+      } : undefined,
+    });
+  } catch (error) {
+    console.error('Failed to refresh quota:', error);
+    res.status(500).json({ error: 'Failed to refresh quota' });
   }
 });
 

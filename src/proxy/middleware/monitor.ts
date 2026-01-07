@@ -42,6 +42,20 @@ export function monitorMiddleware(
       log.model = req.body.model;
     }
 
+    // Read handler-provided metadata from res.locals
+    if (res.locals.accountEmail) {
+      log.accountEmail = res.locals.accountEmail;
+    }
+    if (res.locals.inputTokens !== undefined) {
+      log.inputTokens = res.locals.inputTokens;
+    }
+    if (res.locals.outputTokens !== undefined) {
+      log.outputTokens = res.locals.outputTokens;
+    }
+    if (res.locals.errorMessage) {
+      log.errorMessage = res.locals.errorMessage;
+    }
+
     // Log to database (fire and forget)
     logRequest(log).catch(err => {
       console.error('Failed to log request:', err);

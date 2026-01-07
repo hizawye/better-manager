@@ -1,17 +1,26 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { config } from './config/settings.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Import API routes
 import accountsRouter from './api/accounts.js';
 import configRouter from './api/config.js';
 import monitorRouter from './api/monitor.js';
 import oauthRouter from './auth/routes.js';
+import providersRouter from './api/providers.js';
+import mappingsRouter from './api/mappings.js';
 
 // Import proxy components
 import {
   openaiHandler,
   claudeHandler,
+  geminiHandler,
+  mcpHandler,
   authMiddleware,
   monitorMiddleware,
   tokenManager,
@@ -40,6 +49,32 @@ app.use('/accounts', accountsRouter);
 app.use('/config', configRouter);
 app.use('/monitor', monitorRouter);
 app.use('/oauth', oauthRouter);
+app.use('/providers', providersRouter);
+app.use('/mappings', mappingsRouter);
+
+// Serve static frontend in production
+if (process.env.NODE_ENV === 'production') {
+  const frontendDistPath = path.join(__dirname, '../frontend/dist');
+  app.use(express.static(frontendDistPath));
+
+  // Catch-all route for React Router (must be before proxy routes)
+  app.get('*', (req, res, next) => {
+    // Skip API and proxy routes
+    if (req.path.startsWith('/v1') ||
+        req.path.startsWith('/v1beta') ||
+        req.path.startsWith('/mcp') ||
+        req.path.startsWith('/accounts') ||
+        req.path.startsWith('/config') ||
+        req.path.startsWith('/monitor') ||
+        req.path.startsWith('/oauth') ||
+        req.path.startsWith('/providers') ||
+        req.path.startsWith('/mappings') ||
+        req.path.startsWith('/health')) {
+      return next();
+    }
+    res.sendFile(path.join(frontendDistPath, 'index.html'));
+  });
+}
 
 // Proxy routes with auth and monitoring middleware
 // OpenAI-compatible endpoints
@@ -47,6 +82,12 @@ app.use('/v1', authMiddleware, monitorMiddleware, openaiHandler);
 
 // Claude-compatible endpoints
 app.use('/v1', authMiddleware, monitorMiddleware, claudeHandler);
+
+// Gemini native endpoints
+app.use('/v1beta', authMiddleware, monitorMiddleware, geminiHandler);
+
+// MCP (Model Context Protocol) endpoints
+app.use('/mcp', authMiddleware, monitorMiddleware, mcpHandler);
 
 // Start server and load accounts
 const port = config.port;

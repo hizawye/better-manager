@@ -1,0 +1,82 @@
+{
+  "dashboard": {
+    "title": "仪表板",
+    "currentAccount": "当前账户",
+    "noAccount": "未选择账户",
+    "totalAccounts": "总账户数",
+    "activeAccounts": "活跃账户",
+    "providerHealth": "提供商健康状态"
+  },
+  "accounts": {
+    "title": "账户",
+    "addAccount": "添加账户",
+    "noAccounts": "未找到账户",
+    "email": "邮箱",
+    "tier": "等级",
+    "quota": "配额",
+    "status": "状态",
+    "active": "活跃",
+    "inactive": "非活跃",
+    "forbidden": "已禁止",
+    "delete": "删除",
+    "confirmDelete": "确定要删除此账户吗？",
+    "setCurrent": "设为当前",
+    "toggleStatus": "切换状态"
+  },
+  "providers": {
+    "title": "提供商",
+    "status": "状态",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "dispatchMode": "调度模式",
+    "requests": "请求数",
+    "errors": "错误数",
+    "cost": "成本",
+    "metrics": "指标",
+    "logs": "日志",
+    "resetMetrics": "重置指标",
+    "confirmReset": "确定要重置所有指标吗？"
+  },
+  "monitor": {
+    "title": "监控",
+    "logs": "日志",
+    "stats": "统计",
+    "totalRequests": "总请求数",
+    "successRate": "成功率",
+    "avgLatency": "平均延迟",
+    "totalTokens": "总令牌数",
+    "clearLogs": "清除日志",
+    "confirmClear": "确定要清除所有日志吗？",
+    "autoRefresh": "自动刷新",
+    "timestamp": "时间戳",
+    "account": "账户",
+    "model": "模型",
+    "statusCode": "状态",
+    "latency": "延迟",
+    "tokens": "令牌"
+  },
+  "settings": {
+    "title": "设置",
+    "proxy": "代理配置",
+    "host": "主机",
+    "port": "端口",
+    "schedulingMode": "调度模式",
+    "sessionStickiness": "会话粘性",
+    "allowedModels": "允许的模型",
+    "theme": "主题",
+    "language": "语言",
+    "save": "保存",
+    "cancel": "取消"
+  },
+  "common": {
+    "loading": "加载中...",
+    "error": "错误",
+    "success": "成功",
+    "confirm": "确认",
+    "cancel": "取消",
+    "save": "保存",
+    "delete": "删除",
+    "edit": "编辑",
+    "close": "关闭"
+  }
+}

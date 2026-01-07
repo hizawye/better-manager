@@ -5,6 +5,7 @@ import { accounts } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { googleOAuth } from '../auth/google.js';
 import { upstreamClient } from './upstream.js';
+import { rateLimiter } from './rate-limiter.js';
 import {
   ProxyToken,
   RateLimitInfo,
@@ -272,6 +273,10 @@ export class TokenManager {
     };
 
     this.rateLimits.set(accountId, info);
+
+    // Record event for tracking/stats
+    rateLimiter.recordEvent(accountId, status, reason, retryAfter, errorBody);
+
     console.log(`Account ${accountId} rate-limited for ${retryAfter}s (${reason})`);
   }
 
@@ -333,6 +338,51 @@ export class TokenManager {
    */
   size(): number {
     return this.tokens.size;
+  }
+
+  /**
+   * Get all current rate limits
+   */
+  getRateLimits(): Map<string, RateLimitInfo> {
+    // Clean up expired limits first
+    const now = Date.now();
+    for (const [accountId, info] of this.rateLimits) {
+      if (now >= info.until) {
+        this.rateLimits.delete(accountId);
+      }
+    }
+    return new Map(this.rateLimits);
+  }
+
+  /**
+   * Get rate limit status for all accounts
+   */
+  getRateLimitStatus(): Array<{
+    accountId: string;
+    email: string;
+    isLimited: boolean;
+    reason?: string;
+    remainingSeconds?: number;
+  }> {
+    const status = [];
+    const now = Date.now();
+
+    for (const [accountId, token] of this.tokens) {
+      const limitInfo = this.rateLimits.get(accountId);
+      const isLimited = limitInfo && now < limitInfo.until;
+
+      status.push({
+        accountId,
+        email: token.email,
+        isLimited: !!isLimited,
+        reason: isLimited ? limitInfo.reason : undefined,
+        remainingSeconds: isLimited
+          ? Math.ceil((limitInfo.until - now) / 1000)
+          : undefined,
+      });
+    }
+
+    return status;
   }
 
   private sleep(ms: number): Promise<void> {

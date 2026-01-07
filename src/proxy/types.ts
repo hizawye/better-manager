@@ -116,7 +116,7 @@ export interface OpenAIResponse {
 
 // Claude API types
 export interface ClaudeContentBlock {
-  type: 'text' | 'image' | 'tool_use' | 'tool_result';
+  type: 'text' | 'image' | 'tool_use' | 'tool_result' | 'thinking' | 'redacted_thinking';
   text?: string;
   source?: { type: 'base64'; media_type: string; data: string };
   id?: string;
@@ -124,6 +124,11 @@ export interface ClaudeContentBlock {
   input?: Record<string, unknown>;
   tool_use_id?: string;
   content?: string | ClaudeContentBlock[];
+  // Thinking block fields
+  thinking?: string;
+  signature?: string;
+  cache_control?: { type: string };
+  data?: string; // For redacted_thinking
 }
 
 export interface ClaudeMessage {
@@ -141,7 +146,7 @@ export interface ClaudeRequest {
   model: string;
   messages: ClaudeMessage[];
   max_tokens: number;
-  system?: string;
+  system?: string | ClaudeContentBlock[];
   temperature?: number;
   top_p?: number;
   top_k?: number;
@@ -150,6 +155,7 @@ export interface ClaudeRequest {
   tool_choice?: { type: 'auto' | 'any' | 'tool' | 'none'; name?: string };
   stop_sequences?: string[];
   metadata?: { user_id?: string };
+  thinking?: { type: 'enabled'; budget_tokens?: number } | { type: 'disabled' };
 }
 
 export interface ClaudeResponse {

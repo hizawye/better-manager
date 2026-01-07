@@ -3,6 +3,14 @@
 import { GeminiRequest, GeminiResponse } from './types.js';
 import crypto from 'crypto';
 
+// Quota information from Cloud Code API
+export interface CloudCodeQuota {
+  proQuota: number;
+  flashQuota: number;
+  imageQuota: number;
+  subscriptionTier?: string;
+}
+
 // Cloud Code v1internal endpoints (with fallback)
 const V1_INTERNAL_ENDPOINTS = [
   'https://cloudcode-pa.googleapis.com/v1internal',
@@ -93,6 +101,70 @@ export class UpstreamClient {
     const noun = nouns[Math.floor(Math.random() * nouns.length)];
     const random = crypto.randomBytes(3).toString('hex').slice(0, 5);
     return `${adj}-${noun}-${random}`;
+  }
+
+  /**
+   * Fetch quota information from Cloud Code API
+   */
+  async fetchQuota(accessToken: string): Promise<CloudCodeQuota> {
+    const url = 'https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist';
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+        'User-Agent': USER_AGENT,
+      },
+      body: JSON.stringify({
+        metadata: {
+          ideType: 'ANTIGRAVITY',
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`loadCodeAssist failed ${response.status}: ${text}`);
+    }
+
+    const data = await response.json() as {
+      subscriptionInfo?: {
+        subscriptionPlan?: string;
+        quotas?: Array<{
+          quotaType?: string;
+          remainingQuota?: number;
+          totalQuota?: number;
+        }>;
+      };
+    };
+
+    // Extract quota values from response
+    const quotas = data.subscriptionInfo?.quotas ?? [];
+
+    let proQuota = 0;
+    let flashQuota = 0;
+    let imageQuota = 0;
+
+    for (const quota of quotas) {
+      const remaining = quota.remainingQuota ?? 0;
+      const quotaType = (quota.quotaType ?? '').toLowerCase();
+
+      if (quotaType.includes('pro') || quotaType.includes('premium') || quotaType.includes('opus')) {
+        proQuota = remaining;
+      } else if (quotaType.includes('flash') || quotaType.includes('standard') || quotaType.includes('sonnet')) {
+        flashQuota = remaining;
+      } else if (quotaType.includes('image') || quotaType.includes('vision')) {
+        imageQuota = remaining;
+      }
+    }
+
+    return {
+      proQuota,
+      flashQuota,
+      imageQuota,
+      subscriptionTier: data.subscriptionInfo?.subscriptionPlan,
+    };
   }
 
   /**
